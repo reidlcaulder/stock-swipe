@@ -74,13 +74,30 @@ export default function App() {
     setIsAnalyzing(true);
     setShowAnalysis(true);
     
+    let secFinancials = "";
+    try {
+       const edgarRes = await fetch(`/api/financials/${currentStock.symbol}`);
+       if (edgarRes.ok) {
+          const data = await edgarRes.json();
+          secFinancials = `SEC EDGAR Financials (Latest 10-K):
+          Revenue: $${data.revenues?.toLocaleString() || 'N/A'}
+          Net Income: $${data.netIncome?.toLocaleString() || 'N/A'}
+          Assets: $${data.assets?.toLocaleString() || 'N/A'}
+          Liabilities: $${data.liabilities?.toLocaleString() || 'N/A'}
+          `;
+       }
+    } catch(e) {
+       console.log('Edgar fetch failed', e);
+    }
+    
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analyze ${currentStock.name} (${currentStock.symbol}) as if you were a quick Tinder-style bio. 
         Current Price: $${currentStock.price}. Market Cap: ${currentStock.marketCap}. 
-        Provide a 2-sentence summary: one sentence on their "vibe" (what they do) and one sentence on why someone might "swipe right" (bull case) or "swipe left" (bear case). Keep it punchy and personality-driven. 
+        ${secFinancials}
+        Provide a 2-sentence summary: one sentence on their "vibe" (what they do/financial health) and one sentence on why someone might "swipe right" (bull case) or "swipe left" (bear case). Keep it punchy and personality-driven. 
         Format as: "VIBE: ... \nDRIVE: ..."`,
       });
       setAnalysis(response.text || "Couldn't get info right now.");

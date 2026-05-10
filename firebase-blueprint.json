@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "FinancialsCache": {
+      "title": "FinancialsCache",
+      "description": "Cached financial data from EDGAR",
+      "type": "object",
+      "properties": {
+        "ticker": { "type": "string" },
+        "companyName": { "type": "string" },
+        "cik": { "type": "string" },
+        "netIncome": { "type": "number" },
+        "revenues": { "type": "number" },
+        "assets": { "type": "number" },
+        "liabilities": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["ticker", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/financialsCache/{ticker}": {
+      "schema": { "$ref": "#/entities/FinancialsCache" },
+      "description": "Cached data for each stock ticker"
+    }
+  }
+}

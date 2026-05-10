@@ -3,6 +3,13 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import pkg from 'yahoo-finance2';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import fs from 'fs';
+
+const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
 
 const { YahooFinance } = pkg as any;
 const yahooFinance = new YahooFinance();
@@ -23,6 +30,30 @@ async function startServer() {
   let stockCache: any = null;
   let lastFetchTime = 0;
   const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
+
+  // SEC Edgar caching
+  let cikMap: Record<string, string> | null = null;
+  const secHeaders = {
+    'User-Agent': 'StockSwipe App reid@example.com',
+    'Accept-Encoding': 'gzip, deflate'
+  };
+
+  async function getCikMap() {
+    if (cikMap) return cikMap;
+    try {
+      const res = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: secHeaders });
+      const data = await res.json();
+      cikMap = {};
+      Object.values(data).forEach((company: any) => {
+        // Pad CIK to 10 digits as required by the CompanyFacts API
+        cikMap![company.ticker.toUpperCase()] = String(company.cik_str).padStart(10, '0');
+      });
+      return cikMap;
+    } catch (error) {
+      console.error("Failed to fetch CIK map:", error);
+      return {};
+    }
+  }
 
   // API Routes
   app.get("/api/stocks", async (req, res) => {
@@ -89,6 +120,76 @@ async function startServer() {
       maximumFractionDigits: 1,
     }).format(value);
   }
+
+  // SEC Edgar Financials API Database
+  app.get("/api/financials/:ticker", async (req, res) => {
+    const ticker = req.params.ticker.toUpperCase();
+    try {
+      const cacheRef = doc(db, 'financialsCache', ticker);
+      const cacheSnap = await getDoc(cacheRef);
+      
+      if (cacheSnap.exists()) {
+        const data = cacheSnap.data();
+        const updatedAt = new Date(data.updatedAt).getTime();
+        // Return if fetched in the last 24 hours
+        if (Date.now() - updatedAt < 1000 * 60 * 60 * 24) {
+          return res.json(data);
+        }
+      }
+
+      const map = await getCikMap();
+      const cik = map[ticker];
+      if (!cik) {
+        return res.status(404).json({ error: "Ticker not found in SEC database" });
+      }
+
+      const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`;
+      const response = await fetch(url, { headers: secHeaders });
+      
+      if (!response.ok) {
+        throw new Error(`SEC API returned status: ${response.status}`);
+      }
+
+      const rawFacts = await response.json();
+      
+      // Extract a basic financial summary from US-GAAP values
+      const usGaap = rawFacts.facts?.['us-gaap'] || {};
+      
+      // Helper to get latest annual fact
+      const getLatestAnnual = (concept: string) => {
+         const data = usGaap[concept]?.units?.USD || [];
+         const annuals = data.filter((d: any) => d.form === '10-K');
+         if (!annuals.length) return null;
+         annuals.sort((a: any, b: any) => new Date(b.end).getTime() - new Date(a.end).getTime());
+         return annuals[0]?.val || null;
+      };
+
+      const financials = {
+        ticker,
+        companyName: rawFacts.entityName || '',
+        cik,
+        netIncome: getLatestAnnual('NetIncomeLoss'),
+        revenues: getLatestAnnual('Revenues') || getLatestAnnual('SalesRevenueNet'),
+        assets: getLatestAnnual('Assets'),
+        liabilities: getLatestAnnual('Liabilities'),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Ensure no undefined values which Firebase rejects. Replace nulls or undefined with missing or remove.
+      const cleanedFinancials = Object.fromEntries(Object.entries(financials).filter(([_, v]) => v != null));
+
+      try {
+        await setDoc(cacheRef, cleanedFinancials, { merge: true });
+      } catch (e) {
+        console.error("Cache write error:", e);
+      }
+
+      res.json(cleanedFinancials);
+    } catch (error) {
+      console.error(`Failed to fetch financials for ${ticker}:`, error);
+      res.status(500).json({ error: "Failed to fetch SEC financial data" });
+    }
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
