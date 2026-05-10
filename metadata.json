@@ -1,0 +1,6 @@
+{
+  "name": "StockSwipe",
+  "description": "A Tinder-style stock discovery app. Swipe right to watchlist, left to pass. Featuring live-looking charts and AI-powered company insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
