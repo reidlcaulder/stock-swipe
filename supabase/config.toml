@@ -1,0 +1,25 @@
+# Supabase CLI project config. Only settings that differ from the CLI defaults
+# are listed here; see https://supabase.com/docs/guides/local-development/cli/config
+
+project_id = "stockswipe"
+
+[auth]
+# The app signs in with a 6-digit email code (no redirect links needed).
+site_url = "stockswipe://"
+
+[auth.email]
+otp_length = 6
+otp_expiry = 3600
+
+# Supabase sends the "magic link" template for signInWithOtp; including
+# {{ .Token }} turns it into a 6-digit code email, which is what the app expects.
+[auth.email.template.magic_link]
+subject = "Your StockSwipe sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[functions.market]
+verify_jwt = true
+
+[functions.refresh-stocks]
+# Called by pg_cron with the x-refresh-secret header instead of a user JWT.
+verify_jwt = false

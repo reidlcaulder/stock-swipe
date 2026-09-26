@@ -1,8 +1,11 @@
-import firebaseRulesPlugin from '@firebase/eslint-plugin-security-rules';
+// https://docs.expo.dev/guides/using-eslint/
+const { defineConfig } = require('eslint/config');
+const expoConfig = require('eslint-config-expo/flat');
 
-export default [
+module.exports = defineConfig([
+  expoConfig,
   {
-    ignores: ['dist/**/*']
+    // Edge Functions run on Deno and are linted with `npm run functions:check`.
+    ignores: ['dist/*', 'supabase/*'],
   },
-  firebaseRulesPlugin.configs['flat/recommended']
-];
+]);
